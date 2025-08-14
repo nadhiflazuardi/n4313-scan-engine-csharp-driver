@@ -175,6 +175,52 @@ public class ScannerDriver
     }
   }
 
+  public async Task FactoryReset(CancellationToken cancellationToken)
+  {
+    try
+    {
+      if (!_serialPort.IsOpen)
+      {
+        _serialPort.Open();
+      }
+
+      string removeCustomSettingsCommand = COMMAND_PREFIX + "defovr!";
+      await SendCommandAsync(removeCustomSettingsCommand, cancellationToken);
+
+      ECommandResponse response = await ListenForResponseAsync(cancellationToken);
+      if (response == ECommandResponse.ACK)
+      {
+        string activateDefaultsCommand = COMMAND_PREFIX + "defalt!";
+        await SendCommandAsync(activateDefaultsCommand, cancellationToken);
+
+        response = await ListenForResponseAsync(cancellationToken);
+        if (response == ECommandResponse.ACK)
+        {
+          Console.WriteLine("Factory reset successful.");
+        }
+        else
+        {
+          Console.WriteLine($"Failed to activate default settings. Response: {response}");
+        }
+      }
+      else
+      {
+        Console.WriteLine($"Failed to perform factory reset. Response: {response}");
+      }
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine($"Error during factory reset: {ex.Message}");
+    }
+    finally
+    {
+      if (_serialPort.IsOpen)
+      {
+        _serialPort.Close();
+      }
+    }
+  }
+
   private async Task<ECommandResponse> ListenForResponseAsync(CancellationToken cancellationToken)
   {
     var buffer = new byte[1];
