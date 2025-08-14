@@ -120,5 +120,31 @@ public class ScannerDriver
 
     return ECommandResponse.NAK; // Default response
   }
+
+  private async Task SendCommandAsync(string command, CancellationToken cancellationToken)
+  {
+    try
+    {
+      if (!_serialPort.IsOpen)
+      {
+        _serialPort.Open();
+      }
+
+      string fullCommand = command + "\n";
+      byte[] commandBytes = Encoding.ASCII.GetBytes(fullCommand);
+      await _serialPort.BaseStream.WriteAsync(commandBytes, 0, commandBytes.Length, cancellationToken);
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine($"Error sending command: {ex.Message}");
+    }
+    finally
+    {
+      if (_serialPort.IsOpen)
+      {
+        _serialPort.Close();
+      }
+    }
+  }
 }
 
