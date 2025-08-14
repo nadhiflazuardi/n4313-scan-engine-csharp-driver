@@ -64,13 +64,6 @@ public class ScannerDriver
   public async Task ActivateEngineAsync(CancellationToken cancellationToken)
   {
     string message = ACTIVATE_ENGINE_COMMAND;
-    
-  }
-
-  public bool Deactivate()
-  {
-    string message = DEACTIVATE_ENGINE_COMMAND;
-
     try
     {
       if (!_serialPort.IsOpen)
@@ -78,12 +71,56 @@ public class ScannerDriver
         _serialPort.Open();
       }
 
-      _serialPort.WriteLine(message);
-      return true;
+      await SendCommandAsync(message, cancellationToken);
+
+      ECommandResponse response = await ListenForResponseAsync(cancellationToken);
+      if (response == ECommandResponse.ACK)
+      {
+        Console.WriteLine("Engine activated successfully.");
+      }
+      else
+      {
+        Console.WriteLine($"Failed to activate engine. Response: {response}");
+      }
     }
     catch (Exception ex)
     {
-      Console.WriteLine($"Error deactivating scanner: {ex.Message}");
+      Console.WriteLine($"Error activating engine: {ex.Message}");
+    }
+    finally
+    {
+      if (_serialPort.IsOpen)
+      {
+        _serialPort.Close();
+      }
+    }
+  }
+
+  public async Task DeactivateEngineAsync(CancellationToken cancellationToken)
+  {
+    string message = DEACTIVATE_ENGINE_COMMAND;
+    try
+    {
+      if (!_serialPort.IsOpen)
+      {
+        _serialPort.Open();
+      }
+
+      await SendCommandAsync(message, cancellationToken);
+
+      ECommandResponse response = await ListenForResponseAsync(cancellationToken);
+      if (response == ECommandResponse.ACK)
+      {
+        Console.WriteLine("Engine deactivated successfully.");
+      }
+      else
+      {
+        Console.WriteLine($"Failed to deactivate engine. Response: {response}");
+      }
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine($"Error deactivating engine: {ex.Message}");
     }
     finally
     {
