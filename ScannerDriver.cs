@@ -25,15 +25,28 @@ public class ScannerDriver
     _serialPort = serialPort;
   }
 
+  public void Connect()
+  {
+    if (!_serialPort.IsOpen)
+    {
+      _serialPort.Open();
+    }
+  }
+
+  public void Disconnect()
+  {
+    if (_serialPort.IsOpen)
+    {
+      _serialPort.Close();
+    }
+  }
+
   public async Task ActivateEngineAsync(CancellationToken cancellationToken)
   {
     string message = ACTIVATE_ENGINE_COMMAND;
     try
     {
-      if (!_serialPort.IsOpen)
-      {
-        _serialPort.Open();
-      }
+      EnsureConnected();
 
       await SendCommandAsync(message, cancellationToken);
 
@@ -65,10 +78,7 @@ public class ScannerDriver
     string message = DEACTIVATE_ENGINE_COMMAND;
     try
     {
-      if (!_serialPort.IsOpen)
-      {
-        _serialPort.Open();
-      }
+      EnsureConnected();
 
       await SendCommandAsync(message, cancellationToken);
 
@@ -99,10 +109,7 @@ public class ScannerDriver
   {
     try
     {
-      if (!_serialPort.IsOpen)
-      {
-        _serialPort.Open();
-      }
+      EnsureConnected();
 
       string message = string.Empty;
       if (mode == EScannerMode.Continuous)
@@ -143,10 +150,7 @@ public class ScannerDriver
   {
     try
     {
-      if (!_serialPort.IsOpen)
-      {
-        _serialPort.Open();
-      }
+      EnsureConnected();
 
       string removeCustomSettingsCommand = COMMAND_PREFIX + "defovr!";
       await SendCommandAsync(removeCustomSettingsCommand, cancellationToken);
@@ -185,6 +189,14 @@ public class ScannerDriver
     }
   }
 
+  private void EnsureConnected()
+  {
+    if (!_serialPort.IsOpen)
+    {
+      throw new InvalidOperationException("ScannerDriver is not connected. Call Connect() before using this method.");
+    }
+  }
+
   private async Task<ECommandResponse> ListenForResponseAsync(CancellationToken cancellationToken)
   {
     var buffer = new byte[1];
@@ -216,10 +228,7 @@ public class ScannerDriver
   {
     try
     {
-      if (!_serialPort.IsOpen)
-      {
-        _serialPort.Open();
-      }
+      EnsureConnected();
 
       string fullCommand = command + "\n";
       byte[] commandBytes = Encoding.ASCII.GetBytes(fullCommand);
