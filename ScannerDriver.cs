@@ -131,6 +131,50 @@ public class ScannerDriver
     }
   }
 
+  public async Task SetModeAsync(EScannerMode mode, CancellationToken cancellationToken)
+  {
+    try
+    {
+      if (!_serialPort.IsOpen)
+      {
+        _serialPort.Open();
+      }
+
+      string message = string.Empty;
+      if (mode == EScannerMode.Continuous)
+      {
+        message = COMMAND_PREFIX + "ppam3!";
+      }
+      else if (mode == EScannerMode.Default)
+      {
+        message = COMMAND_PREFIX + "aosdft";
+      }
+
+      await SendCommandAsync(message, cancellationToken);
+
+      ECommandResponse response = await ListenForResponseAsync(cancellationToken);
+      if (response == ECommandResponse.ACK)
+      {
+        Console.WriteLine("Mode set successfully.");
+      }
+      else
+      {
+        Console.WriteLine($"Failed to set mode. Response: {response}");
+      }
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine($"Error setting mode: {ex.Message}");
+    }
+    finally
+    {
+      if (_serialPort.IsOpen)
+      {
+        _serialPort.Close();
+      }
+    }
+  }
+
   private async Task<ECommandResponse> ListenForResponseAsync(CancellationToken cancellationToken)
   {
     var buffer = new byte[1];
