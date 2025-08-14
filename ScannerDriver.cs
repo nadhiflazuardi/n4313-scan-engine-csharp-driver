@@ -25,42 +25,6 @@ public class ScannerDriver
     _serialPort = serialPort;
   }
 
-  public bool SetMode(EScannerMode mode)
-  {
-    try
-    {
-      string message = string.Empty;
-      if (!_serialPort.IsOpen)
-      {
-        _serialPort.Open();
-      }
-      if (mode == EScannerMode.Continuous)
-      {
-        message = COMMAND_PREFIX + "ppam3!";
-      }
-      else if (mode == EScannerMode.Default)
-      {
-        message = COMMAND_PREFIX + "aosdft";
-      }
-
-      _serialPort.WriteLine(message);
-      return true;
-    }
-    catch (Exception ex)
-    {
-      Console.WriteLine($"Error setting mode: {ex.Message}");
-    }
-    finally
-    {
-      if (_serialPort.IsOpen)
-      {
-        _serialPort.Close();
-      }
-    }
-
-    return false;
-  }
-
   public async Task ActivateEngineAsync(CancellationToken cancellationToken)
   {
     string message = ACTIVATE_ENGINE_COMMAND;
