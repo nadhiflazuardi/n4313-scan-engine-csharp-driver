@@ -177,7 +177,7 @@ public class ScannerDriver
     {
       EnsureConnected();
 
-      string fullCommand = command + "\n";
+      string fullCommand = command;
       byte[] commandBytes = Encoding.ASCII.GetBytes(fullCommand);
       await _serialPort.BaseStream.WriteAsync(commandBytes, 0, commandBytes.Length, cancellationToken);
     }
