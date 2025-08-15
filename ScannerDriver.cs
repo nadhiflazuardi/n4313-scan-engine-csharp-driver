@@ -9,10 +9,19 @@ public class ScannerDriver
   private const string COMMAND_PREFIX = "\x16" + "M" + "\x0D";
   private const string ACTIVATE_ENGINE_COMMAND = "\x16" + "T" + "\x0D";
   private const string DEACTIVATE_ENGINE_COMMAND = "\x16" + "U" + "\x0D";
+  public event EventHandler<ECommandResponse>? OnResponseReceived;
+  public event EventHandler<string>? OnDataReceived;
+
+  private EScannerMode _currentMode;
+
+  private CancellationTokenSource? _listenerCts;
+  private Task? _listenerTask;
+
+  private readonly StringBuilder _barcodeBuffer = new();
 
   private SerialPort _serialPort = new SerialPort()
   {
-    PortName = "/dev/serial0",
+    PortName = "/dev/ttyV0",
     BaudRate = 9600,
     DataBits = 8,
     Parity = Parity.None,
@@ -20,21 +29,21 @@ public class ScannerDriver
     Handshake = Handshake.None,
   };
 
-  public ScannerDriver(SerialPort serialPort)
-  {
-    _serialPort = serialPort;
-  }
-
   public void Connect()
   {
     if (!_serialPort.IsOpen)
     {
       _serialPort.Open();
     }
+
+    _listenerCts = new CancellationTokenSource();
+    _listenerTask = Task.Run(() => ListenLoop(_listenerCts.Token));
   }
 
   public void Disconnect()
   {
+    _listenerCts?.Cancel();
+
     if (_serialPort.IsOpen)
     {
       _serialPort.Close();
@@ -49,27 +58,10 @@ public class ScannerDriver
       EnsureConnected();
 
       await SendCommandAsync(message, cancellationToken);
-
-      ECommandResponse response = await ListenForResponseAsync(cancellationToken);
-      if (response == ECommandResponse.ACK)
-      {
-        Console.WriteLine("Engine activated successfully.");
-      }
-      else
-      {
-        Console.WriteLine($"Failed to activate engine. Response: {response}");
-      }
     }
     catch (Exception ex)
     {
-      Console.WriteLine($"Error activating engine: {ex.Message}");
-    }
-    finally
-    {
-      if (_serialPort.IsOpen)
-      {
-        _serialPort.Close();
-      }
+      throw new InvalidOperationException("Failed to activate engine.", ex);
     }
   }
 
@@ -81,70 +73,39 @@ public class ScannerDriver
       EnsureConnected();
 
       await SendCommandAsync(message, cancellationToken);
-
-      ECommandResponse response = await ListenForResponseAsync(cancellationToken);
-      if (response == ECommandResponse.ACK)
-      {
-        Console.WriteLine("Engine deactivated successfully.");
-      }
-      else
-      {
-        Console.WriteLine($"Failed to deactivate engine. Response: {response}");
-      }
     }
     catch (Exception ex)
     {
-      Console.WriteLine($"Error deactivating engine: {ex.Message}");
-    }
-    finally
-    {
-      if (_serialPort.IsOpen)
-      {
-        _serialPort.Close();
-      }
+      throw new InvalidOperationException("Failed to deactivate engine.", ex);
     }
   }
 
   public async Task SetModeAsync(EScannerMode mode, CancellationToken cancellationToken)
   {
+    if (_currentMode == mode)
+    {
+      return;
+    }
+
     try
     {
       EnsureConnected();
 
-      string message = string.Empty;
-      if (mode == EScannerMode.Continuous)
+      string message = mode switch
       {
-        message = COMMAND_PREFIX + "ppam3!";
-      }
-      else if (mode == EScannerMode.Default)
-      {
-        message = COMMAND_PREFIX + "aosdft";
-      }
+        EScannerMode.Continuous => COMMAND_PREFIX + "ppam3!",
+        EScannerMode.Default => COMMAND_PREFIX + "aosdft",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode))
+      };
 
       await SendCommandAsync(message, cancellationToken);
-
-      ECommandResponse response = await ListenForResponseAsync(cancellationToken);
-      if (response == ECommandResponse.ACK)
-      {
-        Console.WriteLine("Mode set successfully.");
-      }
-      else
-      {
-        Console.WriteLine($"Failed to set mode. Response: {response}");
-      }
     }
     catch (Exception ex)
     {
-      Console.WriteLine($"Error setting mode: {ex.Message}");
-    }
-    finally
-    {
-      if (_serialPort.IsOpen)
-      {
-        _serialPort.Close();
-      }
+      throw new InvalidOperationException("Failed to set scanner mode.", ex);
     }
   }
+
 
   public async Task FactoryReset(CancellationToken cancellationToken)
   {
@@ -154,38 +115,10 @@ public class ScannerDriver
 
       string removeCustomSettingsCommand = COMMAND_PREFIX + "defovr!";
       await SendCommandAsync(removeCustomSettingsCommand, cancellationToken);
-
-      ECommandResponse response = await ListenForResponseAsync(cancellationToken);
-      if (response == ECommandResponse.ACK)
-      {
-        string activateDefaultsCommand = COMMAND_PREFIX + "defalt!";
-        await SendCommandAsync(activateDefaultsCommand, cancellationToken);
-
-        response = await ListenForResponseAsync(cancellationToken);
-        if (response == ECommandResponse.ACK)
-        {
-          Console.WriteLine("Factory reset successful.");
-        }
-        else
-        {
-          Console.WriteLine($"Failed to activate default settings. Response: {response}");
-        }
-      }
-      else
-      {
-        Console.WriteLine($"Failed to perform factory reset. Response: {response}");
-      }
     }
     catch (Exception ex)
     {
-      Console.WriteLine($"Error during factory reset: {ex.Message}");
-    }
-    finally
-    {
-      if (_serialPort.IsOpen)
-      {
-        _serialPort.Close();
-      }
+      throw new InvalidOperationException("Failed to reset scanner to factory settings.", ex);
     }
   }
 
@@ -197,31 +130,45 @@ public class ScannerDriver
     }
   }
 
-  private async Task<ECommandResponse> ListenForResponseAsync(CancellationToken cancellationToken)
+  private async Task ListenLoop(CancellationToken cancellationToken)
   {
     var buffer = new byte[1];
-
     while (!cancellationToken.IsCancellationRequested)
     {
       int bytesRead = await _serialPort.BaseStream.ReadAsync(buffer, 0, 1, cancellationToken);
+      if (bytesRead == 0)
+      {
+        continue; // No data read, continue listening
+      }
 
       char ch = (char)buffer[0];
 
       if (ch == '\x06')
       {
-        return ECommandResponse.ACK;
+        OnResponseReceived?.Invoke(this, ECommandResponse.ACK);
       }
       else if (ch == '\x15')
       {
-        return ECommandResponse.NAK;
+        OnResponseReceived?.Invoke(this, ECommandResponse.NAK);
       }
       else if (ch == '\x05')
       {
-        return ECommandResponse.ENQ;
+        OnResponseReceived?.Invoke(this, ECommandResponse.ENQ);
+      }
+      else if (ch == '\r')
+      {
+        if (_barcodeBuffer.Length > 0)
+        {
+          string barcode = _barcodeBuffer.ToString();
+          _barcodeBuffer.Clear();
+          OnDataReceived?.Invoke(this, barcode);
+        }
+      }
+      else
+      {
+        _barcodeBuffer.Append(ch);
       }
     }
-
-    return ECommandResponse.NAK; // Default response
   }
 
   private async Task SendCommandAsync(string command, CancellationToken cancellationToken)
@@ -236,14 +183,7 @@ public class ScannerDriver
     }
     catch (Exception ex)
     {
-      Console.WriteLine($"Error sending command: {ex.Message}");
-    }
-    finally
-    {
-      if (_serialPort.IsOpen)
-      {
-        _serialPort.Close();
-      }
+      throw new InvalidOperationException("Failed to send command to scanner.", ex);
     }
   }
 }
